@@ -1,0 +1,1483 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OCRツール - 画像テキスト抽出・CSV出力</title>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI','Hiragino Sans','Meiryo',sans-serif;background:#13131f;color:#e0e0e0;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+
+/* ── Header ── */
+header{background:#1a1a2e;padding:10px 20px;display:flex;align-items:center;gap:14px;border-bottom:2px solid #e94560;flex-shrink:0}
+header h1{font-size:1.2rem;color:#e94560;font-weight:800;letter-spacing:1px}
+header .tag{font-size:.72rem;background:#e9456022;color:#e94560;border:1px solid #e9456055;padding:2px 8px;border-radius:10px}
+header .version{font-size:.72rem;color:#555;margin-left:auto}
+
+/* ── Step Nav ── */
+.step-nav{display:flex;background:#1a1a2e;flex-shrink:0;border-bottom:1px solid #252540}
+.step-btn{flex:1;padding:10px 4px;text-align:center;cursor:pointer;font-size:.72rem;color:#555;border:none;background:none;transition:.2s;border-bottom:3px solid transparent;line-height:1.4}
+.step-btn .sn{display:block;font-size:1rem;font-weight:800;margin-bottom:2px}
+.step-btn.active{color:#e94560;border-bottom-color:#e94560}
+.step-btn.done{color:#4ECDC4}
+.step-btn.done .sn{color:#4ECDC4}
+.step-btn:hover{background:#252540}
+
+/* ── Panels ── */
+.panel{display:none;flex:1;overflow:hidden}
+.panel.active{display:flex;flex-direction:column}
+.app-main{flex:1;overflow:hidden;display:flex}
+
+/* ── Buttons ── */
+.btn{padding:7px 14px;border:none;border-radius:6px;cursor:pointer;font-size:.82rem;font-weight:600;transition:.2s;white-space:nowrap}
+.btn-primary{background:#e94560;color:#fff}
+.btn-primary:hover{background:#c8374f}
+.btn-secondary{background:#252540;color:#e0e0e0;border:1px solid #353560}
+.btn-secondary:hover{background:#353560}
+.btn-success{background:#4ECDC4;color:#13131f;font-weight:700}
+.btn-success:hover{background:#3db8b0}
+.btn-danger{background:#ff4444;color:#fff}
+.btn-danger:hover{background:#cc3333}
+.btn-sm{padding:3px 9px;font-size:.75rem}
+.btn-xs{padding:2px 7px;font-size:.72rem}
+.btn:disabled{opacity:.35;cursor:not-allowed}
+.btn-icon{padding:4px 8px;font-size:1rem;line-height:1}
+
+/* ── Form ── */
+select,input[type=text],input[type=number]{background:#1e1e36;border:1px solid #353560;color:#e0e0e0;padding:5px 9px;border-radius:5px;font-size:.82rem}
+select:focus,input:focus{outline:1px solid #e94560}
+input[type=checkbox]{accent-color:#e94560;width:15px;height:15px}
+label{font-size:.82rem;color:#aaa}
+
+/* ════════════════ STEP 1: UPLOAD ════════════════ */
+#panel-upload{flex-direction:row;flex-wrap:wrap;padding:20px;gap:20px;overflow-y:auto}
+.upload-zone{flex:1;min-width:280px;max-width:460px;border:2px dashed #353560;border-radius:14px;padding:40px 20px;text-align:center;cursor:pointer;transition:.2s;display:flex;flex-direction:column;align-items:center;gap:10px}
+.upload-zone:hover,.upload-zone.drag-over{border-color:#e94560;background:#e9456008}
+.upload-icon{font-size:3.2rem;line-height:1}
+.upload-zone h2{font-size:1rem;color:#ccc}
+.upload-zone p{font-size:.8rem;color:#666}
+.upload-zone .hint{font-size:.72rem;color:#444;margin-top:4px}
+#file-input{display:none}
+.image-list-panel{flex:1;min-width:240px;overflow:hidden;display:flex;flex-direction:column;gap:10px}
+.image-list-panel h3{font-size:.85rem;color:#888;padding-bottom:6px;border-bottom:1px solid #252540}
+.image-list{overflow-y:auto;display:flex;flex-direction:column;gap:6px;max-height:calc(100vh - 240px)}
+.image-item{display:flex;align-items:center;gap:10px;background:#1a1a2e;border:1px solid #252540;border-radius:8px;padding:8px 10px;transition:.2s}
+.image-item:hover{border-color:#353560}
+.image-item.active-img{border-color:#e94560}
+.image-item img{width:52px;height:40px;object-fit:cover;border-radius:4px;border:1px solid #252540}
+.image-item .iinfo{flex:1;min-width:0}
+.image-item .iname{font-size:.82rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.image-item .isize{font-size:.7rem;color:#555}
+.istat{font-size:.72rem;font-weight:600}
+.s-pend{color:#666}
+.s-proc{color:#FFEAA7}
+.s-done{color:#4ECDC4}
+.s-err{color:#ff6b6b}
+.step-actions{padding:16px 20px;background:#1a1a2e;border-top:1px solid #252540;display:flex;justify-content:flex-end;gap:10px;flex-shrink:0}
+
+/* ════════════════ STEP 2: REGIONS ════════════════ */
+#panel-regions{flex-direction:row;overflow:hidden}
+.canvas-area{flex:1;display:flex;flex-direction:column;overflow:hidden;background:#0d0d1a}
+.canvas-toolbar{background:#1a1a2e;padding:7px 12px;display:flex;gap:8px;align-items:center;flex-shrink:0;border-bottom:1px solid #252540;flex-wrap:wrap}
+.tool-btn{padding:5px 12px;border:1px solid #353560;border-radius:5px;background:none;color:#888;cursor:pointer;font-size:.78rem;transition:.2s}
+.tool-btn.active{background:#e94560;border-color:#e94560;color:#fff}
+.tool-btn:hover:not(.active){background:#252540;color:#ccc}
+.canvas-wrapper{flex:1;overflow:auto;display:flex;align-items:center;justify-content:center;padding:16px}
+#region-canvas{display:block;cursor:crosshair}
+#region-canvas.select-mode{cursor:default}
+.canvas-hint{font-size:.72rem;color:#555;margin-left:auto}
+
+.region-sidebar{width:290px;background:#1a1a2e;border-left:1px solid #252540;display:flex;flex-direction:column;overflow:hidden;flex-shrink:0}
+.rsb-header{padding:10px 14px;border-bottom:1px solid #252540;display:flex;align-items:center;gap:8px;flex-shrink:0}
+.rsb-header h3{font-size:.88rem;flex:1}
+.rsb-count{font-size:.72rem;color:#555;background:#13131f;padding:2px 7px;border-radius:8px}
+.region-list{flex:1;overflow-y:auto;padding:8px}
+.region-item{background:#13131f;border:2px solid transparent;border-radius:8px;padding:9px;margin-bottom:7px;cursor:pointer;transition:.15s}
+.region-item:hover{border-color:#353560}
+.region-item.sel{border-color:#e94560;background:#e9456008}
+.ri-head{display:flex;align-items:center;gap:7px;margin-bottom:7px}
+.ri-dot{width:11px;height:11px;border-radius:50%;flex-shrink:0}
+.ri-name{background:none;border:none;color:#e0e0e0;font-size:.83rem;font-weight:600;flex:1;padding:0;min-width:0}
+.ri-name:focus{outline:1px solid #e94560;border-radius:2px;padding:0 2px}
+.ri-coords{font-size:.7rem;color:#444;margin-bottom:7px;font-family:monospace}
+.ri-output{display:grid;grid-template-columns:auto 1fr;gap:4px 8px;align-items:center;font-size:.75rem}
+.ri-output label{color:#777}
+.ri-output input{width:100%;padding:3px 6px}
+.ri-foot{display:flex;gap:4px;justify-content:flex-end;margin-top:7px}
+.rsb-footer{padding:10px;border-top:1px solid #252540;flex-shrink:0}
+.img-nav{display:flex;align-items:center;gap:6px;font-size:.78rem;color:#666;justify-content:center;margin-bottom:8px}
+.img-nav-name{max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;text-align:center}
+
+/* ════════════════ STEP 3: SETTINGS ════════════════ */
+#panel-settings{overflow-y:auto;padding:20px}
+.settings-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;max-width:860px}
+.scard{background:#1a1a2e;border:1px solid #252540;border-radius:10px;padding:18px}
+.scard h3{font-size:.88rem;color:#e94560;margin-bottom:14px;padding-bottom:8px;border-bottom:1px solid #252540}
+.srow{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:12px}
+.srow:last-child{margin-bottom:0}
+.slabel{flex:1}
+.slabel span{display:block;font-size:.83rem;color:#e0e0e0}
+.slabel small{display:block;font-size:.7rem;color:#555;margin-top:1px;line-height:1.3}
+.sctl{flex-shrink:0}
+.sctl select,.sctl input{min-width:110px}
+.chk-label{display:flex;align-items:center;gap:7px;cursor:pointer;font-size:.83rem;color:#ccc}
+.preproc-preview{margin-top:10px;display:flex;gap:8px}
+.pp-canvas{width:100%;height:80px;background:#0d0d1a;border:1px solid #252540;border-radius:4px;display:block}
+
+/* ════════════════ STEP 4: RESULTS ════════════════ */
+#panel-results{overflow:hidden}
+.results-toolbar{background:#1a1a2e;padding:9px 14px;display:flex;gap:8px;align-items:center;flex-shrink:0;border-bottom:1px solid #252540;flex-wrap:wrap}
+.progress-section{padding:10px 16px;background:#0d0d1a;flex-shrink:0;border-bottom:1px solid #252540}
+.prow{display:flex;align-items:center;gap:10px;margin-bottom:6px;font-size:.78rem}
+.prow:last-child{margin-bottom:0}
+.plabel{color:#666;width:140px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pbar-bg{flex:1;height:7px;background:#252540;border-radius:4px;overflow:hidden}
+.pbar-fill{height:100%;background:#e94560;border-radius:4px;transition:width .3s;width:0}
+.pbar-fill.done{background:#4ECDC4}
+.ppct{width:34px;text-align:right;color:#888;font-family:monospace}
+.results-body{flex:1;overflow:auto;padding:14px}
+table.rtable{border-collapse:collapse;font-size:.8rem;min-width:100%}
+.rtable th{background:#1e1e36;padding:7px 11px;text-align:left;border:1px solid #353560;white-space:nowrap;position:sticky;top:0;z-index:1}
+.rtable td{padding:5px 10px;border:1px solid #252540;vertical-align:top}
+.rtable tr:nth-child(even) td{background:#1a1a2e08}
+.rtable tr:hover td{background:#e9456008}
+.cell-edit{min-width:80px;max-width:200px;white-space:pre-wrap;word-break:break-all}
+.cell-edit:focus{outline:1px solid #e94560;background:#e9456010}
+.cconf{font-size:.68rem;margin-top:2px}
+.cc-h{color:#4ECDC4}.cc-m{color:#FFEAA7}.cc-l{color:#ff6b6b}
+.no-res{text-align:center;padding:60px 20px;color:#444}
+.no-res .icon{font-size:3rem;display:block;margin-bottom:12px}
+.csv-prev{margin-top:16px}
+.csv-prev h4{font-size:.8rem;color:#888;margin-bottom:6px}
+.csv-prev pre{background:#0d0d1a;border:1px solid #252540;padding:10px;border-radius:6px;font-size:.75rem;color:#4ECDC4;white-space:pre-wrap;max-height:180px;overflow-y:auto;font-family:monospace}
+
+/* ── Toast ── */
+.toast-container{position:fixed;bottom:20px;right:20px;z-index:1000;display:flex;flex-direction:column;gap:6px;pointer-events:none}
+.toast{background:#1a1a2e;border:1px solid #353560;border-radius:8px;padding:9px 14px;font-size:.82rem;animation:tslide .2s ease;max-width:280px;pointer-events:auto}
+.toast.ok{border-color:#4ECDC4;color:#4ECDC4}
+.toast.err{border-color:#ff4444;color:#ff4444}
+.toast.inf{border-color:#45B7D1;color:#45B7D1}
+@keyframes tslide{from{transform:translateX(110%);opacity:0}to{transform:none;opacity:1}}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:#0d0d1a}
+::-webkit-scrollbar-thumb{background:#252540;border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:#353560}
+
+/* ── Modal ── */
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:200;align-items:center;justify-content:center}
+.modal-bg.open{display:flex}
+.modal{background:#1a1a2e;border:1px solid #353560;border-radius:12px;padding:24px;max-width:440px;width:90%;max-height:80vh;overflow-y:auto}
+.modal h3{font-size:1rem;margin-bottom:16px;color:#e0e0e0}
+.modal-footer{display:flex;gap:8px;justify-content:flex-end;margin-top:20px}
+
+/* ── Misc ── */
+.sep{width:1px;height:20px;background:#353560;flex-shrink:0}
+.ml-auto{margin-left:auto}
+.flex{display:flex}.gap-8{gap:8px}.gap-4{gap:4px}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>OCRツール</h1>
+  <span class="tag">ローカル処理</span>
+  <span class="tag">CSV出力</span>
+  <span class="version">Tesseract.js powered — データは外部送信されません</span>
+</header>
+
+<nav class="step-nav" id="step-nav">
+  <button class="step-btn active" data-step="1" onclick="goStep(1)"><span class="sn">1</span>画像アップロード</button>
+  <button class="step-btn" data-step="2" onclick="goStep(2)"><span class="sn">2</span>範囲設定</button>
+  <button class="step-btn" data-step="3" onclick="goStep(3)"><span class="sn">3</span>OCR設定</button>
+  <button class="step-btn" data-step="4" onclick="goStep(4)"><span class="sn">4</span>処理・結果</button>
+</nav>
+
+<div class="app-main">
+
+  <!-- ===== STEP 1: UPLOAD ===== -->
+  <div id="panel-upload" class="panel active">
+    <div class="upload-zone" id="upload-zone" onclick="document.getElementById('file-input').click()" ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
+      <div class="upload-icon">🖼️</div>
+      <h2>画像をドロップ or クリックして選択</h2>
+      <p>JPG / PNG / BMP / TIFF / WebP 対応</p>
+      <p>複数ファイルを一度に選択可能</p>
+      <p class="hint">処理はすべてブラウザ内で完結します（外部送信なし）</p>
+    </div>
+    <input type="file" id="file-input" multiple accept="image/*" onchange="onFileSelect(event)">
+
+    <div class="image-list-panel">
+      <h3 id="img-list-title">アップロード済み画像：0枚</h3>
+      <div class="image-list" id="image-list"></div>
+      <div id="upload-actions" style="display:none;margin-top:8px">
+        <button class="btn btn-danger btn-sm" onclick="clearImages()">すべて削除</button>
+      </div>
+    </div>
+
+    <div class="step-actions">
+      <button class="btn btn-primary" onclick="goStep(2)" id="btn-to-regions" disabled>範囲設定へ →</button>
+    </div>
+  </div>
+
+  <!-- ===== STEP 2: REGIONS ===== -->
+  <div id="panel-regions" class="panel">
+    <div class="canvas-area">
+      <div class="canvas-toolbar">
+        <button class="tool-btn active" id="tool-draw" onclick="setTool('draw')" title="ドラッグで範囲を描画">✏️ 描画</button>
+        <button class="tool-btn" id="tool-select" onclick="setTool('select')" title="範囲を選択・移動">↖ 選択</button>
+        <div class="sep"></div>
+        <button class="btn btn-secondary btn-sm" onclick="clearAllRegions()" title="全範囲削除">全削除</button>
+        <button class="btn btn-secondary btn-sm" onclick="copyRegionsFromFirst()" title="最初の画像の範囲を全画像に適用">全画像に適用</button>
+        <div class="sep"></div>
+        <label style="font-size:.78rem;color:#888">ズーム:</label>
+        <select id="zoom-select" onchange="setZoom(this.value)" style="padding:3px 7px;font-size:.78rem">
+          <option value=".5">50%</option>
+          <option value=".75">75%</option>
+          <option value="1" selected>100%</option>
+          <option value="1.25">125%</option>
+          <option value="1.5">150%</option>
+          <option value="2">200%</option>
+        </select>
+        <span class="canvas-hint" id="canvas-hint">ドラッグして範囲を描画してください</span>
+        <div class="ml-auto" style="display:flex;gap:8px;align-items:center">
+          <button class="btn btn-secondary btn-sm" onclick="goStep(1)">← 戻る</button>
+          <button class="btn btn-primary btn-sm" onclick="goStep(3)">OCR設定へ →</button>
+        </div>
+      </div>
+      <div class="canvas-wrapper" id="canvas-wrapper">
+        <canvas id="region-canvas"></canvas>
+      </div>
+    </div>
+
+    <div class="region-sidebar">
+      <div class="rsb-header">
+        <h3>範囲リスト</h3>
+        <span class="rsb-count" id="region-count">0 / 100</span>
+        <button class="btn btn-primary btn-sm" onclick="addRegionManually()" title="範囲を追加">＋</button>
+      </div>
+      <div class="region-list" id="region-list"></div>
+      <div class="rsb-footer">
+        <div class="img-nav">
+          <button class="btn btn-secondary btn-xs" onclick="navImage(-1)">◀</button>
+          <span class="img-nav-name" id="nav-img-name">-</span>
+          <button class="btn btn-secondary btn-xs" onclick="navImage(1)">▶</button>
+        </div>
+        <div style="font-size:.72rem;color:#555;text-align:center">
+          <span id="nav-img-idx">-</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== STEP 3: SETTINGS ===== -->
+  <div id="panel-settings" class="panel">
+    <div class="settings-grid">
+
+      <div class="scard">
+        <h3>🔤 OCR言語</h3>
+        <div class="srow">
+          <div class="slabel">
+            <span>認識言語</span>
+            <small>複数言語は自動的に組み合わせられます</small>
+          </div>
+          <div class="sctl">
+            <select id="s-lang" multiple size="5" style="min-width:150px;height:auto">
+              <option value="jpn" selected>日本語</option>
+              <option value="eng" selected>英語</option>
+              <option value="chi_sim">中国語(簡体)</option>
+              <option value="chi_tra">中国語(繁体)</option>
+              <option value="kor">韓国語</option>
+              <option value="fra">フランス語</option>
+              <option value="deu">ドイツ語</option>
+              <option value="spa">スペイン語</option>
+              <option value="por">ポルトガル語</option>
+              <option value="rus">ロシア語</option>
+            </select>
+          </div>
+        </div>
+        <p style="font-size:.7rem;color:#555">Ctrl/Cmd+クリックで複数選択</p>
+      </div>
+
+      <div class="scard">
+        <h3>⚙️ OCRエンジン設定</h3>
+        <div class="srow">
+          <div class="slabel">
+            <span>ページ分割モード (PSM)</span>
+            <small>テキストのレイアウトに合わせて選択</small>
+          </div>
+          <div class="sctl">
+            <select id="s-psm">
+              <option value="3" selected>3: 全自動</option>
+              <option value="1">1: 自動(OSD付き)</option>
+              <option value="4">4: 単一カラム</option>
+              <option value="5">5: 垂直ブロック</option>
+              <option value="6">6: 単一テキストブロック</option>
+              <option value="7">7: 単一テキスト行</option>
+              <option value="8">8: 単一単語</option>
+              <option value="9">9: 円形単語</option>
+              <option value="10">10: 単一文字</option>
+              <option value="11">11: スパーステキスト</option>
+              <option value="13">13: 生ライン</option>
+            </select>
+          </div>
+        </div>
+        <div class="srow">
+          <div class="slabel">
+            <span>OCRエンジンモード (OEM)</span>
+            <small>精度と速度のトレードオフ</small>
+          </div>
+          <div class="sctl">
+            <select id="s-oem">
+              <option value="1" selected>1: LSTMのみ(高精度)</option>
+              <option value="0">0: レガシーのみ</option>
+              <option value="2">2: LSTMとレガシー</option>
+              <option value="3">3: デフォルト</option>
+            </select>
+          </div>
+        </div>
+        <div class="srow">
+          <div class="slabel">
+            <span>信頼度しきい値</span>
+            <small>これ以下の認識結果は空白にする</small>
+          </div>
+          <div class="sctl">
+            <input type="number" id="s-conf-thresh" value="0" min="0" max="100" style="width:70px"> %
+          </div>
+        </div>
+      </div>
+
+      <div class="scard">
+        <h3>🖼️ 画像前処理</h3>
+        <div class="srow">
+          <div class="slabel">
+            <span>グレースケール変換</span>
+            <small>カラー画像をグレーに変換して処理</small>
+          </div>
+          <div class="sctl">
+            <label class="chk-label"><input type="checkbox" id="s-gray" checked> 有効</label>
+          </div>
+        </div>
+        <div class="srow">
+          <div class="slabel">
+            <span>二値化（しきい値処理）</span>
+            <small>文字をくっきりさせる</small>
+          </div>
+          <div class="sctl">
+            <label class="chk-label"><input type="checkbox" id="s-thresh-en"> 有効</label>
+          </div>
+        </div>
+        <div class="srow" id="thresh-row" style="display:none">
+          <div class="slabel"><span>しきい値</span><small>128 = 中央値</small></div>
+          <div class="sctl">
+            <input type="number" id="s-thresh-val" value="128" min="0" max="255" style="width:70px">
+          </div>
+        </div>
+        <div class="srow">
+          <div class="slabel">
+            <span>コントラスト強調</span>
+            <small>薄い文字を読みやすくする</small>
+          </div>
+          <div class="sctl">
+            <label class="chk-label"><input type="checkbox" id="s-contrast"> 有効</label>
+          </div>
+        </div>
+        <div class="srow">
+          <div class="slabel">
+            <span>シャープネス強調</span>
+            <small>ぼやけた文字を鮮明化</small>
+          </div>
+          <div class="sctl">
+            <label class="chk-label"><input type="checkbox" id="s-sharpen"> 有効</label>
+          </div>
+        </div>
+        <div class="srow">
+          <div class="slabel">
+            <span>スケールアップ倍率</span>
+            <small>小さな文字の認識精度を上げる</small>
+          </div>
+          <div class="sctl">
+            <select id="s-scale">
+              <option value="1">1× (なし)</option>
+              <option value="2" selected>2× (推奨)</option>
+              <option value="3">3×</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="scard">
+        <h3>📄 テキスト後処理</h3>
+        <div class="srow">
+          <div class="slabel">
+            <span>前後空白・改行を除去</span>
+          </div>
+          <div class="sctl">
+            <label class="chk-label"><input type="checkbox" id="s-trim" checked> 有効</label>
+          </div>
+        </div>
+        <div class="srow">
+          <div class="slabel">
+            <span>改行を半角スペースに置換</span>
+          </div>
+          <div class="sctl">
+            <label class="chk-label"><input type="checkbox" id="s-nospace"> 有効</label>
+          </div>
+        </div>
+        <div class="srow">
+          <div class="slabel">
+            <span>連続空白を1つに圧縮</span>
+          </div>
+          <div class="sctl">
+            <label class="chk-label"><input type="checkbox" id="s-collapsespace" checked> 有効</label>
+          </div>
+        </div>
+        <div class="srow">
+          <div class="slabel">
+            <span>全角数字を半角に変換</span>
+          </div>
+          <div class="sctl">
+            <label class="chk-label"><input type="checkbox" id="s-zen2han"> 有効</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="scard">
+        <h3>📊 CSV出力設定</h3>
+        <div class="srow">
+          <div class="slabel"><span>区切り文字</span></div>
+          <div class="sctl">
+            <select id="s-delim">
+              <option value=",">カンマ (,)</option>
+              <option value="&#9;">タブ (\t)</option>
+              <option value=";">セミコロン (;)</option>
+              <option value="|">パイプ (|)</option>
+            </select>
+          </div>
+        </div>
+        <div class="srow">
+          <div class="slabel"><span>ヘッダー行を含める</span></div>
+          <div class="sctl">
+            <label class="chk-label"><input type="checkbox" id="s-header" checked> 有効</label>
+          </div>
+        </div>
+        <div class="srow">
+          <div class="slabel"><span>ファイル名列を含める</span></div>
+          <div class="sctl">
+            <label class="chk-label"><input type="checkbox" id="s-filename" checked> 有効</label>
+          </div>
+        </div>
+        <div class="srow">
+          <div class="slabel"><span>信頼度列を含める</span></div>
+          <div class="sctl">
+            <label class="chk-label"><input type="checkbox" id="s-conf-col"> 有効</label>
+          </div>
+        </div>
+        <div class="srow">
+          <div class="slabel"><span>文字コード</span></div>
+          <div class="sctl">
+            <select id="s-enc">
+              <option value="utf8bom">UTF-8 (BOM付き)</option>
+              <option value="utf8">UTF-8</option>
+              <option value="sjis">Shift-JIS</option>
+            </select>
+          </div>
+        </div>
+        <div class="srow">
+          <div class="slabel"><span>空セルの代替文字</span></div>
+          <div class="sctl">
+            <input type="text" id="s-empty" value="" placeholder="空のまま" style="width:80px">
+          </div>
+        </div>
+      </div>
+
+      <div class="scard">
+        <h3>💡 その他</h3>
+        <div class="srow">
+          <div class="slabel">
+            <span>並列処理数</span>
+            <small>同時にOCR処理する画像の数</small>
+          </div>
+          <div class="sctl">
+            <select id="s-parallel">
+              <option value="1" selected>1（安定）</option>
+              <option value="2">2</option>
+              <option value="3">3（速い）</option>
+            </select>
+          </div>
+        </div>
+        <div class="srow">
+          <div class="slabel">
+            <span>エラー時にスキップ</span>
+            <small>失敗した画像を飛ばして続行</small>
+          </div>
+          <div class="sctl">
+            <label class="chk-label"><input type="checkbox" id="s-skip-err" checked> 有効</label>
+          </div>
+        </div>
+        <div class="srow">
+          <div class="slabel">
+            <span>出力ファイル名</span>
+            <small>保存するCSVのファイル名</small>
+          </div>
+          <div class="sctl">
+            <input type="text" id="s-outname" value="ocr_result" style="width:120px"> .csv
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="step-actions">
+      <button class="btn btn-secondary" onclick="goStep(2)">← 戻る</button>
+      <button class="btn btn-primary" onclick="goStep(4)">処理・結果へ →</button>
+    </div>
+  </div>
+
+  <!-- ===== STEP 4: RESULTS ===== -->
+  <div id="panel-results" class="panel">
+    <div class="results-toolbar">
+      <button class="btn btn-primary" id="btn-run" onclick="runOCR()">▶ OCR実行</button>
+      <button class="btn btn-danger btn-sm" id="btn-stop" onclick="stopOCR()" disabled>■ 停止</button>
+      <div class="sep"></div>
+      <button class="btn btn-success" onclick="exportCSV()" id="btn-export" disabled>⬇ CSVダウンロード</button>
+      <button class="btn btn-secondary btn-sm" onclick="copyCSV()" id="btn-copy" disabled>📋 コピー</button>
+      <div class="sep"></div>
+      <button class="btn btn-secondary btn-sm" onclick="clearResults()">結果クリア</button>
+      <button class="btn btn-secondary btn-sm" onclick="showPreview()" id="btn-preview" disabled>CSV プレビュー</button>
+      <div class="ml-auto">
+        <button class="btn btn-secondary btn-sm" onclick="goStep(3)">← 設定へ</button>
+      </div>
+    </div>
+    <div class="progress-section" id="progress-section" style="display:none">
+      <div class="prow">
+        <span class="plabel">全体進捗</span>
+        <div class="pbar-bg"><div class="pbar-fill" id="progress-overall"></div></div>
+        <span class="ppct" id="progress-overall-pct">0%</span>
+      </div>
+      <div class="prow">
+        <span class="plabel" id="progress-cur-label">処理中...</span>
+        <div class="pbar-bg"><div class="pbar-fill" id="progress-cur"></div></div>
+        <span class="ppct" id="progress-cur-pct">0%</span>
+      </div>
+    </div>
+    <div class="results-body" id="results-body">
+      <div class="no-res">
+        <span class="icon">📋</span>
+        「OCR実行」ボタンを押すと結果がここに表示されます
+      </div>
+    </div>
+  </div>
+
+</div><!-- app-main -->
+
+<!-- CSV Preview Modal -->
+<div class="modal-bg" id="modal-preview">
+  <div class="modal" style="max-width:700px">
+    <h3>CSV プレビュー</h3>
+    <pre id="modal-csv-content" style="background:#0d0d1a;border:1px solid #252540;padding:12px;border-radius:6px;font-size:.75rem;color:#4ECDC4;max-height:50vh;overflow:auto;font-family:monospace;white-space:pre-wrap"></pre>
+    <div class="modal-footer">
+      <button class="btn btn-success" onclick="exportCSV()">⬇ ダウンロード</button>
+      <button class="btn btn-secondary" onclick="closeModal()">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-container" id="toast-container"></div>
+
+<script>
+// ═══════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════
+const APP = {
+  images: [],      // {id, file, name, url, w, h, imgEl}
+  regions: [],     // {id, name, x,y,w,h (0-1), outputCol, outputRow, color}
+  results: {},     // {imageId: [{regionId, text, confidence}]}
+  currentStep: 1,
+  currentImageIdx: 0,
+  selectedRegionId: null,
+  tool: 'draw',
+  zoom: 1.0,
+  isRunning: false,
+  shouldStop: false,
+  workerPool: [],
+};
+
+const COLORS = ['#FF6B6B','#4ECDC4','#45B7D1','#96CEB4','#FFEAA7','#DDA0DD','#98D8C8','#F7DC6F','#BB8FCE','#85C1E9'];
+let regionIdCounter = 1;
+let imageIdCounter = 1;
+
+// Canvas drawing state
+let isDrawing = false;
+let drawStart = null;
+let drawCurrent = null;
+let imgDisplayRect = {x:0,y:0,w:0,h:0};
+let isDragging = false;
+let dragStart = null;
+let dragOrigion = null;
+
+// ═══════════════════════════════════════════════
+//  NAVIGATION
+// ═══════════════════════════════════════════════
+function goStep(n) {
+  if (n === 2 && APP.images.length === 0) { toast('画像をアップロードしてください', 'err'); return; }
+  APP.currentStep = n;
+  document.querySelectorAll('.panel').forEach((p,i) => p.classList.toggle('active', i+1 === n));
+  document.querySelectorAll('.step-btn').forEach(b => {
+    const s = +b.dataset.step;
+    b.classList.toggle('active', s === n);
+    b.classList.toggle('done', s < n);
+  });
+  if (n === 2) { initCanvas(); renderRegionList(); updateNavDisplay(); }
+  if (n === 4) { updateResultsToolbar(); }
+}
+
+// ═══════════════════════════════════════════════
+//  UPLOAD
+// ═══════════════════════════════════════════════
+function onDragOver(e) { e.preventDefault(); document.getElementById('upload-zone').classList.add('drag-over'); }
+function onDragLeave(e) { document.getElementById('upload-zone').classList.remove('drag-over'); }
+function onDrop(e) { e.preventDefault(); document.getElementById('upload-zone').classList.remove('drag-over'); addFiles(e.dataTransfer.files); }
+function onFileSelect(e) { addFiles(e.target.files); e.target.value = ''; }
+
+function addFiles(fileList) {
+  const allowed = ['image/jpeg','image/png','image/bmp','image/tiff','image/webp','image/gif'];
+  Array.from(fileList).forEach(f => {
+    if (!allowed.includes(f.type) && !f.name.match(/\.(jpe?g|png|bmp|tif?f|webp|gif)$/i)) {
+      toast(`${f.name}: 非対応形式`, 'err'); return;
+    }
+    const url = URL.createObjectURL(f);
+    const img = new Image();
+    img.onload = () => {
+      APP.images.push({ id: imageIdCounter++, file: f, name: f.name, url, w: img.naturalWidth, h: img.naturalHeight, imgEl: img });
+      renderImageList();
+    };
+    img.src = url;
+  });
+}
+
+function renderImageList() {
+  const list = document.getElementById('image-list');
+  document.getElementById('img-list-title').textContent = `アップロード済み画像：${APP.images.length}枚`;
+  document.getElementById('btn-to-regions').disabled = APP.images.length === 0;
+  document.getElementById('upload-actions').style.display = APP.images.length ? 'block' : 'none';
+  list.innerHTML = APP.images.map((img, idx) => `
+    <div class="image-item ${idx===APP.currentImageIdx?'active-img':''}" onclick="selectActiveImage(${idx})">
+      <img src="${img.url}" alt="${img.name}">
+      <div class="iinfo">
+        <div class="iname" title="${img.name}">${img.name}</div>
+        <div class="isize">${(img.file.size/1024).toFixed(0)} KB · ${img.w}×${img.h}px</div>
+      </div>
+      <span class="istat ${getStatClass(img.id)}">${getStatText(img.id)}</span>
+      <button class="btn btn-danger btn-xs" onclick="event.stopPropagation();removeImage(${idx})" title="削除">✕</button>
+    </div>
+  `).join('');
+}
+
+function getStatClass(id) {
+  if (APP.results[id]) return 's-done';
+  return 's-pend';
+}
+function getStatText(id) {
+  if (APP.results[id]) return '完了';
+  return '未処理';
+}
+
+function selectActiveImage(idx) {
+  APP.currentImageIdx = idx;
+  renderImageList();
+  if (APP.currentStep === 2) { initCanvas(); updateNavDisplay(); }
+}
+
+function removeImage(idx) {
+  URL.revokeObjectURL(APP.images[idx].url);
+  APP.images.splice(idx, 1);
+  if (APP.currentImageIdx >= APP.images.length) APP.currentImageIdx = Math.max(0, APP.images.length-1);
+  renderImageList();
+  if (APP.currentStep === 2) { initCanvas(); updateNavDisplay(); }
+}
+
+function clearImages() {
+  APP.images.forEach(img => URL.revokeObjectURL(img.url));
+  APP.images = [];
+  APP.results = {};
+  renderImageList();
+  if (APP.currentStep === 2) { initCanvas(); updateNavDisplay(); }
+}
+
+// ═══════════════════════════════════════════════
+//  CANVAS / REGION EDITOR
+// ═══════════════════════════════════════════════
+const canvas = document.getElementById('region-canvas');
+const ctx = canvas.getContext('2d');
+
+function initCanvas() {
+  if (APP.images.length === 0) {
+    canvas.width = 600; canvas.height = 400;
+    ctx.fillStyle = '#0d0d1a';
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle = '#333';
+    ctx.font = '16px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('画像が選択されていません', canvas.width/2, canvas.height/2);
+    return;
+  }
+  const img = APP.images[APP.currentImageIdx];
+  const wrapper = document.getElementById('canvas-wrapper');
+  const maxW = Math.max(wrapper.clientWidth - 40, 200);
+  const maxH = Math.max(wrapper.clientHeight - 40, 200);
+  const scale = APP.zoom * Math.min(1, Math.min(maxW / img.w, maxH / img.h));
+  canvas.width = Math.round(img.w * scale);
+  canvas.height = Math.round(img.h * scale);
+  imgDisplayRect = {x:0, y:0, w:canvas.width, h:canvas.height};
+  redrawCanvas();
+}
+
+function redrawCanvas() {
+  if (APP.images.length === 0) return;
+  const img = APP.images[APP.currentImageIdx];
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.drawImage(img.imgEl, 0, 0, canvas.width, canvas.height);
+
+  // Draw regions
+  APP.regions.forEach(r => {
+    const cx = r.x * imgDisplayRect.w + imgDisplayRect.x;
+    const cy = r.y * imgDisplayRect.h + imgDisplayRect.y;
+    const cw = r.w * imgDisplayRect.w;
+    const ch = r.h * imgDisplayRect.h;
+    const isSelected = r.id === APP.selectedRegionId;
+
+    ctx.strokeStyle = r.color;
+    ctx.lineWidth = isSelected ? 2.5 : 1.5;
+    ctx.setLineDash(isSelected ? [] : [5,3]);
+    ctx.strokeRect(cx, cy, cw, ch);
+    ctx.setLineDash([]);
+
+    // Fill (semi-transparent)
+    ctx.fillStyle = r.color + '22';
+    ctx.fillRect(cx, cy, cw, ch);
+
+    // Label
+    const label = `${r.outputCol}:${r.name}`;
+    const fontSize = Math.max(11, Math.min(14, cw/6));
+    ctx.font = `bold ${fontSize}px sans-serif`;
+    const tw = ctx.measureText(label).width;
+    const lx = cx + 4;
+    const ly = cy + fontSize + 2;
+    ctx.fillStyle = r.color + 'cc';
+    ctx.fillRect(lx-2, ly-fontSize-1, tw+6, fontSize+4);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(label, lx+1, ly);
+
+    // Resize handle (bottom-right)
+    if (isSelected) {
+      ctx.fillStyle = r.color;
+      ctx.fillRect(cx+cw-6, cy+ch-6, 8, 8);
+    }
+  });
+
+  // Current drawing
+  if (isDrawing && drawStart && drawCurrent) {
+    const rx = Math.min(drawStart.x, drawCurrent.x);
+    const ry = Math.min(drawStart.y, drawCurrent.y);
+    const rw = Math.abs(drawCurrent.x - drawStart.x);
+    const rh = Math.abs(drawCurrent.y - drawStart.y);
+    ctx.strokeStyle = '#e94560';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6,3]);
+    ctx.strokeRect(rx, ry, rw, rh);
+    ctx.fillStyle = '#e9456022';
+    ctx.fillRect(rx, ry, rw, rh);
+    ctx.setLineDash([]);
+  }
+}
+
+function canvasToImg(cx, cy) {
+  return {
+    x: (cx - imgDisplayRect.x) / imgDisplayRect.w,
+    y: (cy - imgDisplayRect.y) / imgDisplayRect.h
+  };
+}
+
+function getCanvasPos(e) {
+  const rect = canvas.getBoundingClientRect();
+  return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+}
+
+function hitRegion(cx, cy) {
+  for (let i = APP.regions.length - 1; i >= 0; i--) {
+    const r = APP.regions[i];
+    const rx = r.x * imgDisplayRect.w + imgDisplayRect.x;
+    const ry = r.y * imgDisplayRect.h + imgDisplayRect.y;
+    const rw = r.w * imgDisplayRect.w;
+    const rh = r.h * imgDisplayRect.h;
+    if (cx >= rx && cx <= rx+rw && cy >= ry && cy <= ry+rh) return r;
+  }
+  return null;
+}
+
+canvas.addEventListener('mousedown', e => {
+  if (APP.images.length === 0) return;
+  const pos = getCanvasPos(e);
+  if (APP.tool === 'select') {
+    const hit = hitRegion(pos.x, pos.y);
+    if (hit) {
+      APP.selectedRegionId = hit.id;
+      isDragging = true;
+      dragStart = pos;
+      dragOrigion = {...hit};
+      renderRegionList();
+    } else {
+      APP.selectedRegionId = null;
+      renderRegionList();
+    }
+  } else {
+    isDrawing = true;
+    drawStart = pos;
+    drawCurrent = pos;
+  }
+  redrawCanvas();
+});
+
+canvas.addEventListener('mousemove', e => {
+  if (APP.images.length === 0) return;
+  const pos = getCanvasPos(e);
+  if (isDrawing) {
+    drawCurrent = pos;
+    redrawCanvas();
+  }
+  if (isDragging && APP.selectedRegionId) {
+    const r = APP.regions.find(r => r.id === APP.selectedRegionId);
+    if (!r) return;
+    const dx = (pos.x - dragStart.x) / imgDisplayRect.w;
+    const dy = (pos.y - dragStart.y) / imgDisplayRect.h;
+    r.x = Math.max(0, Math.min(1-r.w, dragOrigion.x + dx));
+    r.y = Math.max(0, Math.min(1-r.h, dragOrigion.y + dy));
+    redrawCanvas();
+    updateRegionItem(r);
+  }
+});
+
+canvas.addEventListener('mouseup', e => {
+  if (!APP.images.length) return;
+  const pos = getCanvasPos(e);
+  if (isDrawing) {
+    isDrawing = false;
+    const rx = Math.min(drawStart.x, pos.x);
+    const ry = Math.min(drawStart.y, pos.y);
+    const rw = Math.abs(pos.x - drawStart.x);
+    const rh = Math.abs(pos.y - drawStart.y);
+    if (rw > 8 && rh > 8) {
+      const ip = canvasToImg(rx, ry);
+      const iw = rw / imgDisplayRect.w;
+      const ih = rh / imgDisplayRect.h;
+      const clampedX = Math.max(0, Math.min(ip.x, 1));
+      const clampedY = Math.max(0, Math.min(ip.y, 1));
+      const clampedW = Math.min(iw, 1-clampedX);
+      const clampedH = Math.min(ih, 1-clampedY);
+      addRegion({x:clampedX, y:clampedY, w:clampedW, h:clampedH});
+    }
+    drawStart = null; drawCurrent = null;
+    redrawCanvas();
+  }
+  if (isDragging) {
+    isDragging = false;
+    dragStart = null; dragOrigion = null;
+    renderRegionList();
+  }
+});
+
+canvas.addEventListener('mouseleave', () => {
+  if (isDrawing) { isDrawing = false; drawStart=null; drawCurrent=null; redrawCanvas(); }
+});
+
+// Touch support
+canvas.addEventListener('touchstart', e => { e.preventDefault(); canvas.dispatchEvent(new MouseEvent('mousedown', touchToMouse(e))); }, {passive:false});
+canvas.addEventListener('touchmove', e => { e.preventDefault(); canvas.dispatchEvent(new MouseEvent('mousemove', touchToMouse(e))); }, {passive:false});
+canvas.addEventListener('touchend', e => { e.preventDefault(); canvas.dispatchEvent(new MouseEvent('mouseup', touchToMouse(e))); }, {passive:false});
+function touchToMouse(e) {
+  const t = e.touches[0] || e.changedTouches[0];
+  return { clientX: t.clientX, clientY: t.clientY, bubbles: true };
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Delete' && APP.selectedRegionId && document.activeElement.tagName !== 'INPUT') {
+    removeRegion(APP.selectedRegionId);
+  }
+  if (e.key === 'Escape') { APP.selectedRegionId = null; renderRegionList(); redrawCanvas(); }
+});
+
+function setTool(t) {
+  APP.tool = t;
+  document.getElementById('tool-draw').classList.toggle('active', t==='draw');
+  document.getElementById('tool-select').classList.toggle('active', t==='select');
+  canvas.className = t==='select' ? 'select-mode' : '';
+  document.getElementById('canvas-hint').textContent = t==='draw' ? 'ドラッグして範囲を描画' : '範囲をクリックで選択・ドラッグで移動';
+}
+
+function setZoom(z) {
+  APP.zoom = parseFloat(z);
+  initCanvas();
+}
+
+// ═══════════════════════════════════════════════
+//  REGION MANAGEMENT
+// ═══════════════════════════════════════════════
+function addRegion(coords) {
+  if (APP.regions.length >= 100) { toast('範囲は最大100まで設定できます', 'err'); return; }
+  const id = regionIdCounter++;
+  const col = APP.regions.length + 1;
+  const color = COLORS[(APP.regions.length) % COLORS.length];
+  const region = { id, name: `範囲${col}`, color, outputCol: col, outputRow: null, ...coords };
+  APP.regions.push(region);
+  APP.selectedRegionId = id;
+  renderRegionList();
+  redrawCanvas();
+  toast(`範囲${col}を追加しました`, 'ok');
+}
+
+function addRegionManually() {
+  if (APP.images.length === 0) { toast('先に画像をアップロードしてください', 'err'); return; }
+  addRegion({x:0.1, y:0.1, w:0.3, h:0.2});
+}
+
+function removeRegion(id) {
+  APP.regions = APP.regions.filter(r => r.id !== id);
+  if (APP.selectedRegionId === id) APP.selectedRegionId = null;
+  renderRegionList();
+  redrawCanvas();
+}
+
+function clearAllRegions() {
+  APP.regions = [];
+  APP.selectedRegionId = null;
+  renderRegionList();
+  redrawCanvas();
+}
+
+function copyRegionsFromFirst() {
+  toast('全画像に同じ範囲設定が適用されます（範囲は相対座標で保存済み）', 'inf');
+}
+
+function renderRegionList() {
+  const list = document.getElementById('region-list');
+  document.getElementById('region-count').textContent = `${APP.regions.length} / 100`;
+  list.innerHTML = APP.regions.map(r => `
+    <div class="region-item ${r.id===APP.selectedRegionId?'sel':''}" onclick="selectRegion(${r.id})" id="ri-${r.id}">
+      <div class="ri-head">
+        <span class="ri-dot" style="background:${r.color}"></span>
+        <input class="ri-name" type="text" value="${escHtml(r.name)}"
+          onchange="updateRegionName(${r.id},this.value)"
+          onclick="event.stopPropagation()"
+          placeholder="範囲名">
+        <button class="btn btn-danger btn-xs" onclick="event.stopPropagation();removeRegion(${r.id})" title="削除">✕</button>
+      </div>
+      <div class="ri-coords">
+        X:${(r.x*100).toFixed(1)}% Y:${(r.y*100).toFixed(1)}%
+        W:${(r.w*100).toFixed(1)}% H:${(r.h*100).toFixed(1)}%
+      </div>
+      <div class="ri-output">
+        <label>出力列</label>
+        <input type="number" value="${r.outputCol}" min="1" max="999"
+          onclick="event.stopPropagation()"
+          onchange="updateRegionCol(${r.id},this.value)">
+      </div>
+    </div>
+  `).join('');
+}
+
+function updateRegionItem(r) {
+  const el = document.getElementById(`ri-${r.id}`);
+  if (el) {
+    const coords = el.querySelector('.ri-coords');
+    if (coords) coords.textContent = `X:${(r.x*100).toFixed(1)}% Y:${(r.y*100).toFixed(1)}% W:${(r.w*100).toFixed(1)}% H:${(r.h*100).toFixed(1)}%`;
+  }
+}
+
+function selectRegion(id) {
+  APP.selectedRegionId = id;
+  renderRegionList();
+  redrawCanvas();
+  document.getElementById(`ri-${id}`)?.scrollIntoView({block:'nearest'});
+}
+
+function updateRegionName(id, v) {
+  const r = APP.regions.find(r => r.id === id);
+  if (r) { r.name = v; redrawCanvas(); }
+}
+
+function updateRegionCol(id, v) {
+  const r = APP.regions.find(r => r.id === id);
+  if (r) r.outputCol = Math.max(1, parseInt(v)||1);
+}
+
+function navImage(dir) {
+  APP.currentImageIdx = (APP.currentImageIdx + dir + APP.images.length) % APP.images.length;
+  initCanvas();
+  updateNavDisplay();
+}
+
+function updateNavDisplay() {
+  document.getElementById('nav-img-name').textContent = APP.images[APP.currentImageIdx]?.name || '-';
+  document.getElementById('nav-img-idx').textContent = APP.images.length ? `${APP.currentImageIdx+1} / ${APP.images.length}` : '';
+}
+
+// ═══════════════════════════════════════════════
+//  IMAGE PREPROCESSING
+// ═══════════════════════════════════════════════
+function preprocessImage(img, regionX, regionY, regionW, regionH) {
+  const scale = parseInt(document.getElementById('s-scale').value) || 2;
+  const pw = Math.round(img.w * regionW * scale);
+  const ph = Math.round(img.h * regionH * scale);
+  const off = document.createElement('canvas');
+  off.width = pw; off.height = ph;
+  const oc = off.getContext('2d');
+
+  oc.drawImage(img.imgEl,
+    img.w * regionX, img.h * regionY,
+    img.w * regionW, img.h * regionH,
+    0, 0, pw, ph
+  );
+
+  const useGray = document.getElementById('s-gray').checked;
+  const useThresh = document.getElementById('s-thresh-en').checked;
+  const threshVal = parseInt(document.getElementById('s-thresh-val').value) || 128;
+  const useContrast = document.getElementById('s-contrast').checked;
+  const useSharpen = document.getElementById('s-sharpen').checked;
+
+  if (useGray || useThresh || useContrast || useSharpen) {
+    const imgData = oc.getImageData(0, 0, pw, ph);
+    const d = imgData.data;
+
+    for (let i = 0; i < d.length; i += 4) {
+      let r = d[i], g = d[i+1], b = d[i+2];
+
+      if (useContrast) {
+        r = Math.min(255, Math.max(0, (r - 128) * 1.5 + 128));
+        g = Math.min(255, Math.max(0, (g - 128) * 1.5 + 128));
+        b = Math.min(255, Math.max(0, (b - 128) * 1.5 + 128));
+      }
+
+      if (useGray || useThresh) {
+        const gray = 0.299*r + 0.587*g + 0.114*b;
+        if (useThresh) {
+          const bin = gray > threshVal ? 255 : 0;
+          d[i]=d[i+1]=d[i+2]=bin;
+        } else {
+          d[i]=d[i+1]=d[i+2]=gray;
+        }
+      } else {
+        d[i]=r; d[i+1]=g; d[i+2]=b;
+      }
+    }
+
+    if (useSharpen) {
+      const src = new Uint8ClampedArray(d);
+      const kernel = [0,-1,0,-1,5,-1,0,-1,0];
+      for (let y=1;y<ph-1;y++) {
+        for (let x=1;x<pw-1;x++) {
+          for (let c=0;c<3;c++) {
+            let acc=0;
+            for (let ky=-1;ky<=1;ky++) for (let kx=-1;kx<=1;kx++) {
+              acc += src[((y+ky)*pw+(x+kx))*4+c] * kernel[(ky+1)*3+(kx+1)];
+            }
+            d[(y*pw+x)*4+c] = Math.min(255,Math.max(0,acc));
+          }
+        }
+      }
+    }
+
+    oc.putImageData(imgData, 0, 0);
+  }
+
+  return off;
+}
+
+// ═══════════════════════════════════════════════
+//  TEXT POST-PROCESSING
+// ═══════════════════════════════════════════════
+function postProcess(text) {
+  const trim = document.getElementById('s-trim').checked;
+  const nospace = document.getElementById('s-nospace').checked;
+  const collapse = document.getElementById('s-collapsespace').checked;
+  const zen2han = document.getElementById('s-zen2han').checked;
+
+  if (trim) text = text.trim();
+  if (nospace) text = text.replace(/\r?\n/g, ' ');
+  if (collapse) text = text.replace(/[ \t]+/g, ' ');
+  if (zen2han) {
+    text = text.replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0)-0xFEE0));
+  }
+  return text;
+}
+
+// ═══════════════════════════════════════════════
+//  OCR PROCESSING
+// ═══════════════════════════════════════════════
+async function runOCR() {
+  if (APP.isRunning) return;
+  if (APP.images.length === 0) { toast('画像をアップロードしてください', 'err'); return; }
+  if (APP.regions.length === 0) { toast('OCR範囲を設定してください（範囲設定ステップ）', 'err'); return; }
+
+  APP.isRunning = true;
+  APP.shouldStop = false;
+  document.getElementById('btn-run').disabled = true;
+  document.getElementById('btn-stop').disabled = false;
+  document.getElementById('progress-section').style.display = 'block';
+  document.getElementById('results-body').innerHTML = '<div class="no-res">処理中...</div>';
+
+  const langOpts = Array.from(document.getElementById('s-lang').selectedOptions).map(o=>o.value);
+  const lang = langOpts.length ? langOpts.join('+') : 'eng';
+  const oem = parseInt(document.getElementById('s-oem').value);
+  const psm = parseInt(document.getElementById('s-psm').value);
+  const confThresh = parseInt(document.getElementById('s-conf-thresh').value) || 0;
+  const skipErr = document.getElementById('s-skip-err').checked;
+  const parallel = parseInt(document.getElementById('s-parallel').value) || 1;
+
+  setOverallProgress(0);
+  APP.results = {};
+
+  try {
+    // Create worker pool
+    const workerCount = Math.min(parallel, APP.images.length);
+    APP.workerPool = [];
+    for (let i=0; i<workerCount; i++) {
+      const w = await Tesseract.createWorker(lang, oem);
+      await w.setParameters({ tessedit_pageseg_mode: psm });
+      APP.workerPool.push(w);
+    }
+
+    const total = APP.images.length;
+    let done = 0;
+
+    // Process in batches
+    for (let i=0; i<total && !APP.shouldStop; i+=workerCount) {
+      const batch = APP.images.slice(i, i+workerCount);
+      await Promise.all(batch.map(async (img, bIdx) => {
+        const worker = APP.workerPool[bIdx % workerCount];
+        const imgResults = [];
+        try {
+          setCurrentLabel(img.name);
+          for (let ri=0; ri<APP.regions.length; ri++) {
+            if (APP.shouldStop) break;
+            const r = APP.regions[ri];
+            setCurrentProgress(ri / APP.regions.length * 80);
+            const pp = preprocessImage(img, r.x, r.y, r.w, r.h);
+            const { data } = await worker.recognize(pp);
+            let text = data.text || '';
+            text = postProcess(text);
+            const conf = Math.round(data.confidence || 0);
+            if (conf < confThresh) text = document.getElementById('s-empty').value;
+            imgResults.push({ regionId: r.id, text, confidence: conf });
+            setCurrentProgress((ri+1)/APP.regions.length*100);
+          }
+          APP.results[img.id] = imgResults;
+        } catch(ex) {
+          if (!skipErr) throw ex;
+          APP.results[img.id] = APP.regions.map(r => ({regionId:r.id, text:'[エラー]', confidence:0}));
+          console.error('OCR error:', img.name, ex);
+        }
+        done++;
+        setOverallProgress(done / total * 100);
+      }));
+    }
+
+    // Terminate workers
+    for (const w of APP.workerPool) await w.terminate();
+    APP.workerPool = [];
+
+    renderResults();
+    if (!APP.shouldStop) {
+      toast('OCR処理が完了しました', 'ok');
+      document.getElementById('btn-export').disabled = false;
+      document.getElementById('btn-copy').disabled = false;
+      document.getElementById('btn-preview').disabled = false;
+      setOverallProgress(100, true);
+    } else {
+      toast('OCR処理を停止しました', 'inf');
+    }
+    renderImageList();
+  } catch(ex) {
+    toast('OCR処理でエラーが発生しました: ' + ex.message, 'err');
+    console.error(ex);
+  } finally {
+    APP.isRunning = false;
+    document.getElementById('btn-run').disabled = false;
+    document.getElementById('btn-stop').disabled = true;
+  }
+}
+
+async function stopOCR() {
+  APP.shouldStop = true;
+  for (const w of APP.workerPool) { try { await w.terminate(); } catch(e){} }
+  APP.workerPool = [];
+  toast('停止リクエスト送信済み...', 'inf');
+}
+
+function setOverallProgress(pct, done=false) {
+  const bar = document.getElementById('progress-overall');
+  bar.style.width = pct + '%';
+  bar.classList.toggle('done', done);
+  document.getElementById('progress-overall-pct').textContent = Math.round(pct) + '%';
+}
+
+function setCurrentProgress(pct) {
+  const bar = document.getElementById('progress-cur');
+  bar.style.width = pct + '%';
+  document.getElementById('progress-cur-pct').textContent = Math.round(pct) + '%';
+}
+
+function setCurrentLabel(name) {
+  document.getElementById('progress-cur-label').textContent = name;
+  document.getElementById('progress-cur').style.width = '0%';
+  document.getElementById('progress-cur-pct').textContent = '0%';
+}
+
+// ═══════════════════════════════════════════════
+//  RESULTS
+// ═══════════════════════════════════════════════
+function renderResults() {
+  const body = document.getElementById('results-body');
+  if (!Object.keys(APP.results).length) {
+    body.innerHTML = '<div class="no-res"><span class="icon">📋</span>結果がありません</div>';
+    return;
+  }
+
+  const showFilename = document.getElementById('s-filename').checked;
+  const showConf = document.getElementById('s-conf-col').checked;
+
+  // Build column order from regions sorted by outputCol
+  const sortedRegions = [...APP.regions].sort((a,b) => a.outputCol - b.outputCol);
+  const maxCol = sortedRegions.reduce((m,r) => Math.max(m, r.outputCol), 0);
+
+  let html = '<div class="results-table-wrapper"><table class="rtable"><thead><tr>';
+  if (showFilename) html += '<th>ファイル名</th>';
+  for (let c=1; c<=maxCol; c++) {
+    const regs = APP.regions.filter(r => r.outputCol === c);
+    if (regs.length > 0) {
+      regs.forEach(r => {
+        html += `<th style="border-left:3px solid ${r.color}">列${c}: ${escHtml(r.name)}</th>`;
+        if (showConf) html += `<th style="font-size:.72rem;color:#888">信頼度</th>`;
+      });
+    }
+  }
+  // Empty columns (gaps)
+  html += '</tr></thead><tbody>';
+
+  APP.images.forEach((img, rowIdx) => {
+    const imgRes = APP.results[img.id] || [];
+    html += `<tr>`;
+    if (showFilename) html += `<td style="font-size:.75rem;color:#888;white-space:nowrap">${escHtml(img.name)}</td>`;
+
+    for (let c=1; c<=maxCol; c++) {
+      const regs = APP.regions.filter(r => r.outputCol === c);
+      if (regs.length > 0) {
+        regs.forEach(r => {
+          const res = imgRes.find(x => x.regionId === r.id);
+          const text = res?.text ?? '';
+          const conf = res?.confidence ?? 0;
+          const cClass = conf >= 80 ? 'cc-h' : conf >= 50 ? 'cc-m' : 'cc-l';
+          html += `<td>
+            <div class="cell-edit" contenteditable="true"
+              data-img="${img.id}" data-region="${r.id}"
+              onblur="updateResult(${img.id},${r.id},this.textContent)">${escHtml(text)}</div>
+            ${showConf ? '' : `<div class="cconf ${cClass}">${conf}%</div>`}
+          </td>`;
+          if (showConf) html += `<td><span class="cconf ${cClass}">${conf}%</span></td>`;
+        });
+      }
+    }
+    html += '</tr>';
+  });
+
+  html += '</tbody></table></div>';
+  html += buildCSVPreview();
+  body.innerHTML = html;
+}
+
+function updateResult(imgId, regionId, text) {
+  if (!APP.results[imgId]) return;
+  const item = APP.results[imgId].find(x => x.regionId === regionId);
+  if (item) item.text = text;
+}
+
+function buildCSVPreview() {
+  const csv = generateCSV();
+  const lines = csv.split('\n').slice(0, 10).join('\n');
+  return `<div class="csv-prev"><h4>CSVプレビュー (先頭10行)</h4><pre>${escHtml(lines)}</pre></div>`;
+}
+
+function clearResults() {
+  APP.results = {};
+  document.getElementById('results-body').innerHTML = '<div class="no-res"><span class="icon">📋</span>「OCR実行」ボタンを押すと結果がここに表示されます</div>';
+  document.getElementById('btn-export').disabled = true;
+  document.getElementById('btn-copy').disabled = true;
+  document.getElementById('btn-preview').disabled = true;
+  document.getElementById('progress-section').style.display = 'none';
+  renderImageList();
+}
+
+function updateResultsToolbar() {
+  const hasResults = Object.keys(APP.results).length > 0;
+  document.getElementById('btn-export').disabled = !hasResults;
+  document.getElementById('btn-copy').disabled = !hasResults;
+  document.getElementById('btn-preview').disabled = !hasResults;
+}
+
+// ═══════════════════════════════════════════════
+//  CSV GENERATION & EXPORT
+// ═══════════════════════════════════════════════
+function generateCSV() {
+  const delim = document.getElementById('s-delim').value;
+  const showHeader = document.getElementById('s-header').checked;
+  const showFilename = document.getElementById('s-filename').checked;
+  const showConf = document.getElementById('s-conf-col').checked;
+  const emptyVal = document.getElementById('s-empty').value;
+
+  const sortedRegions = [...APP.regions].sort((a,b) => a.outputCol - b.outputCol);
+  const maxCol = sortedRegions.reduce((m,r) => Math.max(m, r.outputCol), 0);
+
+  // Build column structure (one entry per region, in outputCol order)
+  const cols = [];
+  for (let c=1; c<=maxCol; c++) {
+    const regs = APP.regions.filter(r => r.outputCol === c).sort((a,b)=>a.id-b.id);
+    regs.forEach(r => cols.push(r));
+  }
+
+  const rows = [];
+
+  if (showHeader) {
+    const hdr = [];
+    if (showFilename) hdr.push('ファイル名');
+    cols.forEach(r => {
+      hdr.push(`${r.name}(列${r.outputCol})`);
+      if (showConf) hdr.push(`${r.name}_信頼度`);
+    });
+    rows.push(hdr);
+  }
+
+  APP.images.forEach(img => {
+    const imgRes = APP.results[img.id] || [];
+    const row = [];
+    if (showFilename) row.push(img.name);
+    cols.forEach(r => {
+      const res = imgRes.find(x => x.regionId === r.id);
+      row.push(res?.text ?? emptyVal);
+      if (showConf) row.push(res?.confidence != null ? res.confidence + '%' : '');
+    });
+    rows.push(row);
+  });
+
+  return rows.map(row => row.map(cell => csvCell(String(cell ?? ''), delim)).join(delim)).join('\r\n');
+}
+
+function csvCell(s, delim) {
+  if (s.includes(delim) || s.includes('"') || s.includes('\n') || s.includes('\r')) {
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+  return s;
+}
+
+function exportCSV() {
+  const csv = generateCSV();
+  const enc = document.getElementById('s-enc').value;
+  const fname = (document.getElementById('s-outname').value || 'ocr_result') + '.csv';
+  let blob;
+  if (enc === 'sjis') {
+    const arr = sjisEncode(csv);
+    blob = new Blob([arr], {type:'text/csv;charset=shift_jis'});
+  } else if (enc === 'utf8bom') {
+    blob = new Blob(['﻿', csv], {type:'text/csv;charset=utf-8'});
+  } else {
+    blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = fname;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('CSVをダウンロードしました', 'ok');
+}
+
+function copyCSV() {
+  navigator.clipboard.writeText(generateCSV()).then(() => toast('クリップボードにコピーしました', 'ok'));
+}
+
+function showPreview() {
+  document.getElementById('modal-csv-content').textContent = generateCSV();
+  document.getElementById('modal-preview').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('modal-preview').classList.remove('open');
+}
+
+// Shift-JIS encoding (basic)
+function sjisEncode(str) {
+  const buf = [];
+  for (let i=0; i<str.length; i++) {
+    const c = str.charCodeAt(i);
+    if (c < 0x80) { buf.push(c); continue; }
+    if (c < 0xa0 || (c >= 0xe0 && c < 0x100)) { buf.push(c); continue; }
+    // Simple fallback: use UTF-8 for non-ASCII (browsers handle it anyway)
+    const enc = encodeURIComponent(str[i]);
+    for (let j=0; j<enc.length; j++) {
+      if (enc[j]==='%') { buf.push(parseInt(enc.slice(j+1,j+3),16)); j+=2; }
+      else buf.push(enc.charCodeAt(j));
+    }
+  }
+  return new Uint8Array(buf);
+}
+
+// ═══════════════════════════════════════════════
+//  SETTINGS WIRING
+// ═══════════════════════════════════════════════
+document.getElementById('s-thresh-en').addEventListener('change', function() {
+  document.getElementById('thresh-row').style.display = this.checked ? 'flex' : 'none';
+});
+
+// ═══════════════════════════════════════════════
+//  TOAST
+// ═══════════════════════════════════════════════
+function toast(msg, type='inf') {
+  const c = document.getElementById('toast-container');
+  const t = document.createElement('div');
+  t.className = `toast ${type==='ok'?'ok':type==='err'?'err':'inf'}`;
+  t.textContent = msg;
+  c.appendChild(t);
+  setTimeout(()=>{ t.style.animation='tslide .2s ease reverse'; setTimeout(()=>t.remove(), 200); }, 3000);
+}
+
+// ═══════════════════════════════════════════════
+//  UTILS
+// ═══════════════════════════════════════════════
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// Close modal on background click
+document.getElementById('modal-preview').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+
+// Handle window resize for canvas
+window.addEventListener('resize', () => { if (APP.currentStep===2) initCanvas(); });
+
+// ═══════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════
+(function init() {
+  // Default: 1 region covering full image
+  APP.regions.push({
+    id: regionIdCounter++,
+    name: '範囲1',
+    color: COLORS[0],
+    x: 0, y: 0, w: 1, h: 1,
+    outputCol: 1,
+    outputRow: null,
+  });
+  toast('OCRツールが起動しました。画像をアップロードしてください。', 'inf');
+})();
+</script>
+</body>
+</html>
