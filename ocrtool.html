@@ -4,7 +4,22 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>OCRツール - 画像テキスト抽出・CSV出力</title>
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+<!-- Load Tesseract.js: local lib/ first, CDN fallback -->
+<script>
+(function(){
+  var s = document.createElement('script');
+  s.id = 'tesseract-script';
+  s.src = 'lib/tesseract.min.js';
+  s.onload  = function(){ window._T_LOCAL = true; };
+  s.onerror = function(){
+    window._T_LOCAL = false;
+    var s2 = document.createElement('script');
+    s2.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js';
+    document.head.appendChild(s2);
+  };
+  document.head.appendChild(s);
+})();
+</script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Segoe UI','Hiragino Sans','Meiryo',sans-serif;background:#13131f;color:#e0e0e0;height:100vh;display:flex;flex-direction:column;overflow:hidden}
@@ -185,6 +200,7 @@ table.rtable{border-collapse:collapse;font-size:.8rem;min-width:100%}
   <h1>OCRツール</h1>
   <span class="tag">ローカル処理</span>
   <span class="tag">CSV出力</span>
+  <span id="mode-badge" class="tag" style="margin-left:auto;cursor:default" title="読み込み中...">...</span>
   <span class="version">Tesseract.js powered — データは外部送信されません</span>
 </header>
 
@@ -1171,25 +1187,33 @@ async function runOCR() {
   setOverallProgress(0);
   APP.results = {};
 
-  // Warn about file:// limitations
   if (location.protocol === 'file:') {
-    toast('⚠️ file://で開いています。Workerエラーが出る場合はHTTPサーバ経由でお試しください（python -m http.server など）', 'err');
+    toast('⚠️ file://で開いています。start.bat で起動してください', 'err');
   }
 
-  // Explicit CDN paths so file:// or tracking-prevention doesn't break path resolution
-  const T_CDN  = 'https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/worker.min.js';
-  const C_CDN  = 'https://cdn.jsdelivr.net/npm/tesseract.js-core@4.0.4/tesseract-core-lstm.wasm.js';
-  const L_CDN  = 'https://cdn.jsdelivr.net/gh/naptha/tessdata@gh-pages/4.0.0';
+  // Use local lib/ if downloaded, otherwise CDN
+  const useLocal = window._T_LOCAL === true;
+  const workerOpts = useLocal ? {
+    workerPath: 'lib/worker.min.js',
+    corePath:   'lib/tesseract-core-lstm.wasm.js',
+    langPath:   'langdata',
+  } : {
+    workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/worker.min.js',
+    langPath:   'https://tessdata.projectnaptha.com/4.0.0',
+  };
+
+  if (useLocal) {
+    toast('ローカルファイルを使用します（CDN不要）', 'ok');
+  } else {
+    toast(`言語モデルを読み込んでいます: ${lang}（CDN）`, 'inf');
+  }
 
   let worker = null;
   try {
     setCurrentLabel(`言語モデル読み込み中: ${lang}`);
-    toast(`言語モデルを読み込んでいます: ${lang}`, 'inf');
 
     worker = await Tesseract.createWorker(lang, oem, {
-      workerPath: T_CDN,
-      corePath:   C_CDN,
-      langPath:   L_CDN,
+      ...workerOpts,
       logger: m => {
         if (m.status === 'recognizing text') {
           setCurrentProgress(m.progress * 100);
@@ -1524,6 +1548,21 @@ window.addEventListener('resize', () => { if (APP.currentStep===2) initCanvas();
     const ov = document.getElementById('file-overlay');
     ov.style.display = 'flex';
   }
+
+  // Show local/CDN mode badge once scripts settle
+  setTimeout(() => {
+    const badge = document.getElementById('mode-badge');
+    if (!badge) return;
+    if (window._T_LOCAL) {
+      badge.textContent = 'ローカル';
+      badge.style.cssText += ';background:#4ECDC422;border-color:#4ECDC4;color:#4ECDC4';
+      badge.title = 'lib/ フォルダのファイルを使用（CDN不要）';
+    } else {
+      badge.textContent = 'CDN';
+      badge.style.cssText += ';background:#FFEAA722;border-color:#FFEAA7;color:#FFEAA7';
+      badge.title = 'CDNからファイルを読み込み中。Edgeでエラーが出る場合はdownload_deps.batを実行してください';
+    }
+  }, 1500);
 
   // Default: 1 region covering full image
   APP.regions.push({

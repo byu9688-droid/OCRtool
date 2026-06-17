@@ -27,7 +27,18 @@ if not exist "ocrtool.html" (
 )
 
 echo  ocrtool.html ... OK
-echo.
+
+:: Check if local dependency files are present
+if exist "lib\tesseract.min.js" (
+    echo  lib/ (local mode) ... OK
+) else (
+    echo.
+    echo  NOTE: lib/ folder not found.
+    echo  If you get OCR errors (Edge Tracking Prevention),
+    echo  run download_deps.bat first to download local files.
+    echo.
+)
+
 
 set PORT=8765
 set URL=http://localhost:%PORT%/ocrtool.html
