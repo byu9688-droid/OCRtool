@@ -1193,15 +1193,13 @@ async function runOCR() {
 
   // Use local lib/ if downloaded, otherwise CDN
   const useLocal = window._T_LOCAL === true;
-  // Local mode: serve JS from localhost so Edge Tracking Prevention
-  // does NOT block Cache API (localhost origin is never flagged as tracker).
-  // corePath is intentionally omitted — worker.min.js has the correct
-  // CDN URL baked in and loads it automatically.
   const workerOpts = useLocal ? {
     workerPath: 'lib/worker.min.js',
+    corePath:   'lib/tesseract-core-lstm.wasm.js',
     langPath:   'langdata',
   } : {
     workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/worker.min.js',
+    corePath:   'https://cdn.jsdelivr.net/npm/tesseract.js-core@4/tesseract-core-lstm.wasm.js',
     langPath:   'https://tessdata.projectnaptha.com/4.0.0',
   };
 
