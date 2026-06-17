@@ -1,49 +1,48 @@
 @echo off
-chcp 65001 > nul 2>&1
-title OCRツール 起動中...
+title OCR Tool - Starting...
 
-:: ============================================================
-::  このファイルがあるフォルダに移動（重要）
-:: ============================================================
+:: Move to the folder where this bat file lives
 cd /d "%~dp0"
 
 echo.
 echo  =============================================
-echo   OCRツール  ローカルサーバー起動
+echo   OCR Tool  Local Server Launcher
 echo  =============================================
 echo.
-echo  フォルダ: %~dp0
+echo  Folder : %~dp0
 echo.
 
-:: ocrtool.html の存在確認
+:: Check ocrtool.html exists in same folder
 if not exist "ocrtool.html" (
-    echo  [エラー] ocrtool.html が見つかりません！
+    echo  [ERROR] ocrtool.html not found in this folder^^!
     echo.
-    echo  start.bat と ocrtool.html を同じフォルダに
-    echo  入れてから再実行してください。
+    echo  Please put start.bat and ocrtool.html
+    echo  in the SAME folder, then run again.
     echo.
-    echo  現在のフォルダの中身:
+    echo  Files in current folder:
     dir /b
     echo.
     pause
     exit /b
 )
 
-echo  ocrtool.html ... 検出 OK
+echo  ocrtool.html ... OK
 echo.
 
 set PORT=8765
 set URL=http://localhost:%PORT%/ocrtool.html
 
-:: ---- Python 3 チェック ----
+:: ---- Python 3 ----
 where python > nul 2>&1
 if %ERRORLEVEL% == 0 (
     python -c "import sys; exit(0 if sys.version_info[0]==3 else 1)" > nul 2>&1
     if %ERRORLEVEL% == 0 (
-        echo  [OK] Python 3 を使用してサーバーを起動します
+        echo  [OK] Python 3 found. Starting server...
         echo.
-        echo  ブラウザで開く URL : %URL%
-        echo  停止するには Ctrl+C を押してください
+        echo  Open this URL in your browser:
+        echo    %URL%
+        echo.
+        echo  Press Ctrl+C to stop the server.
         echo.
         start "" "%URL%"
         python -m http.server %PORT%
@@ -51,48 +50,53 @@ if %ERRORLEVEL% == 0 (
     )
 )
 
-:: ---- python3 コマンドチェック ----
+:: ---- python3 command ----
 where python3 > nul 2>&1
 if %ERRORLEVEL% == 0 (
-    echo  [OK] Python3 を使用してサーバーを起動します
+    echo  [OK] Python3 found. Starting server...
     echo.
-    echo  ブラウザで開く URL : %URL%
-    echo  停止するには Ctrl+C を押してください
+    echo  Open this URL in your browser:
+    echo    %URL%
+    echo.
+    echo  Press Ctrl+C to stop the server.
     echo.
     start "" "%URL%"
     python3 -m http.server %PORT%
     goto :done
 )
 
-:: ---- Node.js チェック ----
+:: ---- Node.js ----
 where node > nul 2>&1
 if %ERRORLEVEL% == 0 (
-    echo  [OK] Node.js を使用してサーバーを起動します
+    echo  [OK] Node.js found. Starting server...
     echo.
-    echo  ブラウザで開く URL : %URL%
-    echo  停止するには Ctrl+C を押してください
+    echo  Open this URL in your browser:
+    echo    %URL%
+    echo.
+    echo  Press Ctrl+C to stop the server.
     echo.
     start "" "%URL%"
     npx --yes serve -p %PORT% -s .
     goto :done
 )
 
-:: ---- 何も見つからなかった場合 ----
-echo  ============================================
-echo   [エラー] サーバーを起動できませんでした
-echo  ============================================
+:: ---- Nothing found ----
+echo  =============================================
+echo   [ERROR] Cannot start server
+echo  =============================================
 echo.
-echo  Python または Node.js をインストールしてください。
+echo  Python or Node.js is not installed.
 echo.
-echo  Python (推奨・無料):
+echo  Install Python (recommended, free):
 echo    https://www.python.org/downloads/
-echo    ※ インストール時に「Add Python to PATH」に
-echo       チェックを入れてください！
 echo.
-echo  Node.js (無料):
+echo    IMPORTANT: During install, check the box:
+echo    "Add Python to PATH"
+echo.
+echo  Install Node.js (free):
 echo    https://nodejs.org/
 echo.
-echo  インストール後、このファイルを再実行してください。
+echo  After installing, run this file again.
 echo.
 
 :done
