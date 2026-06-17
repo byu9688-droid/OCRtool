@@ -1137,21 +1137,41 @@ async function runOCR() {
   setOverallProgress(0);
   APP.results = {};
 
+  // Warn about file:// limitations
+  if (location.protocol === 'file:') {
+    toast('⚠️ file://で開いています。Workerエラーが出る場合はHTTPサーバ経由でお試しください（python -m http.server など）', 'err');
+  }
+
+  // Explicit CDN paths so file:// or tracking-prevention doesn't break path resolution
+  const T_CDN  = 'https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/worker.min.js';
+  const C_CDN  = 'https://cdn.jsdelivr.net/npm/tesseract.js-core@4.0.4/tesseract-core-lstm.wasm.js';
+  const L_CDN  = 'https://cdn.jsdelivr.net/gh/naptha/tessdata@gh-pages/4.0.0';
+
   let worker = null;
   try {
     setCurrentLabel(`言語モデル読み込み中: ${lang}`);
     toast(`言語モデルを読み込んでいます: ${lang}`, 'inf');
 
     worker = await Tesseract.createWorker(lang, oem, {
+      workerPath: T_CDN,
+      corePath:   C_CDN,
+      langPath:   L_CDN,
       logger: m => {
         if (m.status === 'recognizing text') {
           setCurrentProgress(m.progress * 100);
         } else if (m.status && m.progress != null) {
-          setCurrentProgress(m.progress * 50); // loading phase capped at 50%
+          setCurrentProgress(m.progress * 50);
         }
       }
     });
-    await worker.setParameters({ tessedit_pageseg_mode: psm });
+
+    // setParameters may fail if WASM didn't initialize (e.g. strict file:// env)
+    try {
+      await worker.setParameters({ tessedit_pageseg_mode: psm });
+    } catch (spErr) {
+      console.warn('setParameters をスキップしました（デフォルトPSMを使用）:', spErr);
+      toast('PSM設定をスキップしました（デフォルト AUTO で続行）', 'inf');
+    }
 
     APP.workerPool = [worker];
 
