@@ -54,37 +54,29 @@ $r = Download-File "Tesseract.js worker script (~123 KB)" "lib\worker.min.js" @(
 )
 if (-not $r) { $ok = $false }
 
-# 3. WASM core -- extract correct URL from worker.min.js if it was downloaded
-$wasmUrls = @(
-    "https://cdn.jsdelivr.net/npm/tesseract.js-core@4.0.0/tesseract-core-lstm.wasm.js",
-    "https://cdn.jsdelivr.net/npm/tesseract.js-core@4.0.4/tesseract-core-lstm.wasm.js",
-    "https://cdn.jsdelivr.net/npm/tesseract.js-core@4/tesseract-core-lstm.wasm.js",
-    "https://unpkg.com/tesseract.js-core@4.0.0/tesseract-core-lstm.wasm.js",
-    "https://unpkg.com/tesseract.js-core@4/tesseract-core-lstm.wasm.js"
+# 3. WASM core (SIMD version -- faster, supported by most modern browsers)
+#    Version MUST match what tesseract.js@4 expects: tesseract.js-core@v4.0.4
+$r = Download-File "Tesseract WASM core SIMD (~6 MB)" "lib\tesseract-core-simd.wasm.js" @(
+    "https://cdn.jsdelivr.net/npm/tesseract.js-core@v4.0.4/tesseract-core-simd.wasm.js",
+    "https://unpkg.com/tesseract.js-core@4.0.4/tesseract-core-simd.wasm.js"
 )
-
-# Try to extract the actual WASM URL from the downloaded worker.min.js
-$workerPath = Join-Path $PSScriptRoot "lib\worker.min.js"
-if (Test-Path $workerPath) {
-    $workerContent = Get-Content $workerPath -Raw -ErrorAction SilentlyContinue
-    if ($workerContent) {
-        $match = [regex]::Match($workerContent, 'https?://[^"'' ]+tesseract-core[^"'' ]*\.wasm\.js')
-        if ($match.Success) {
-            $extractedUrl = $match.Value
-            Write-Host ("  Detected WASM URL from worker: " + $extractedUrl) -ForegroundColor Cyan
-            # Put extracted URL at front of list
-            $wasmUrls = @($extractedUrl) + ($wasmUrls | Where-Object { $_ -ne $extractedUrl })
-        }
-    }
-}
-
-$r = Download-File "Tesseract WASM core (~6 MB)" "lib\tesseract-core-lstm.wasm.js" $wasmUrls
+# SIMD core is optional -- non-SIMD fallback below is sufficient
 if (-not $r) {
-    Write-Host "  NOTE: WASM core is optional. OCR may still work via CDN fallback." -ForegroundColor Yellow
+    Write-Host "  NOTE: SIMD core unavailable -- non-SIMD version will be used instead." -ForegroundColor Yellow
     Write-Host ""
 }
 
-# 4. Language data
+# 4. WASM core (non-SIMD fallback -- required)
+$r = Download-File "Tesseract WASM core (~6 MB)" "lib\tesseract-core.wasm.js" @(
+    "https://cdn.jsdelivr.net/npm/tesseract.js-core@v4.0.4/tesseract-core.wasm.js",
+    "https://unpkg.com/tesseract.js-core@4.0.4/tesseract-core.wasm.js"
+)
+if (-not $r) {
+    Write-Host "  NOTE: WASM core optional; OCR will attempt CDN fallback." -ForegroundColor Yellow
+    Write-Host ""
+}
+
+# 5. Language data
 $r = Download-File "Japanese language model (~13 MB)" "langdata\jpn.traineddata.gz" @(
     "https://tessdata.projectnaptha.com/4.0.0/jpn.traineddata.gz"
 )
