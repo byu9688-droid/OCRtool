@@ -20,13 +20,10 @@ New-Item -ItemType Directory -Force -Path "langdata" | Out-Null
 $files = @(
     @{ url = "https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"
        dest = "lib\tesseract.min.js"
-       desc = "Tesseract.js main script" },
+       desc = "Tesseract.js main script (~66 KB)" },
     @{ url = "https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/worker.min.js"
        dest = "lib\worker.min.js"
-       desc = "Tesseract.js worker script" },
-    @{ url = "https://unpkg.com/tesseract.js-core@4/tesseract-core-lstm.wasm.js"
-       dest = "lib\tesseract-core-lstm.wasm.js"
-       desc = "Tesseract WASM core (~5 MB)" },
+       desc = "Tesseract.js worker script (~123 KB)" },
     @{ url = "https://tessdata.projectnaptha.com/4.0.0/jpn.traineddata.gz"
        dest = "langdata\jpn.traineddata.gz"
        desc = "Japanese language model (~13 MB)" },
@@ -34,6 +31,11 @@ $files = @(
        dest = "langdata\eng.traineddata.gz"
        desc = "English language model (~12 MB)" }
 )
+# Note: WASM core (tesseract-core-lstm.wasm.js) is NOT downloaded here.
+# The worker.min.js already knows the correct CDN URL for it and loads
+# it automatically. Once tesseract.min.js and worker.min.js run from
+# localhost instead of a CDN domain, Edge Tracking Prevention no longer
+# blocks the Cache API, so the core is fetched and cached correctly.
 
 $wc = New-Object System.Net.WebClient
 $ok = $true
