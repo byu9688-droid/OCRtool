@@ -585,6 +585,40 @@ table.rtable{border-collapse:collapse;font-size:.8rem;min-width:100%}
 
 <div class="toast-container" id="toast-container"></div>
 
+<!-- file:// overlay -->
+<div id="file-overlay" style="display:none;position:fixed;inset:0;background:rgba(10,10,20,.96);z-index:500;align-items:center;justify-content:center;padding:20px">
+  <div style="max-width:560px;background:#1a1a2e;border:2px solid #e94560;border-radius:14px;padding:32px;text-align:center">
+    <div style="font-size:3rem;margin-bottom:16px">⚠️</div>
+    <h2 style="color:#e94560;font-size:1.2rem;margin-bottom:12px">ローカルファイルとして開かれています</h2>
+    <p style="color:#ccc;font-size:.88rem;margin-bottom:20px;line-height:1.7">
+      ブラウザのセキュリティポリシーにより、<code style="background:#0d0d1a;padding:2px 6px;border-radius:3px">file://</code> で直接開くと<br>
+      OCRエンジン（Web Worker）が正常に動作しません。<br>
+      付属の起動スクリプトを使ってください。
+    </p>
+    <div style="background:#0d0d1a;border:1px solid #353560;border-radius:10px;padding:20px;text-align:left;margin-bottom:20px">
+      <p style="font-size:.82rem;color:#4ECDC4;font-weight:700;margin-bottom:10px">🚀 起動方法</p>
+      <div style="margin-bottom:14px">
+        <span style="font-size:.78rem;color:#888;display:block;margin-bottom:4px">Windows</span>
+        <code style="font-size:.85rem;color:#FFEAA7;background:#13131f;padding:6px 10px;border-radius:5px;display:block">start.bat をダブルクリック</code>
+      </div>
+      <div style="margin-bottom:14px">
+        <span style="font-size:.78rem;color:#888;display:block;margin-bottom:4px">Mac / Linux</span>
+        <code style="font-size:.85rem;color:#FFEAA7;background:#13131f;padding:6px 10px;border-radius:5px;display:block">./start.sh を実行</code>
+      </div>
+      <hr style="border-color:#252540;margin:14px 0">
+      <p style="font-size:.78rem;color:#888;margin-bottom:8px">または手動でHTTPサーバーを起動：</p>
+      <code style="font-size:.82rem;color:#4ECDC4;background:#13131f;padding:6px 10px;border-radius:5px;display:block">python -m http.server 8765</code>
+      <p style="font-size:.72rem;color:#555;margin-top:6px">→ http://localhost:8765/ocrtool.html をブラウザで開く</p>
+    </div>
+    <p style="font-size:.75rem;color:#555">Python / Node.js / Ruby のいずれかがあれば start スクリプトが自動起動します</p>
+    <div style="margin-top:20px;display:flex;gap:10px;justify-content:center">
+      <button class="btn btn-secondary" onclick="document.getElementById('file-overlay').style.display='none'" style="font-size:.82rem">
+        このまま試してみる（動作しない場合あり）
+      </button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ═══════════════════════════════════════════════
 //  STATE
@@ -1485,6 +1519,12 @@ window.addEventListener('resize', () => { if (APP.currentStep===2) initCanvas();
 //  INIT
 // ═══════════════════════════════════════════════
 (function init() {
+  // Show file:// warning overlay
+  if (location.protocol === 'file:') {
+    const ov = document.getElementById('file-overlay');
+    ov.style.display = 'flex';
+  }
+
   // Default: 1 region covering full image
   APP.regions.push({
     id: regionIdCounter++,
