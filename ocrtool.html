@@ -1129,89 +1129,87 @@ async function runOCR() {
   const langOpts = Array.from(document.getElementById('s-lang').selectedOptions).map(o=>o.value);
   const lang = langOpts.length ? langOpts.join('+') : 'eng';
   const oem = parseInt(document.getElementById('s-oem').value);
-  const psm = parseInt(document.getElementById('s-psm').value);
+  // PSM must be a string in Tesseract.js v4
+  const psm = document.getElementById('s-psm').value;
   const confThresh = parseInt(document.getElementById('s-conf-thresh').value) || 0;
   const skipErr = document.getElementById('s-skip-err').checked;
-  const parallel = parseInt(document.getElementById('s-parallel').value) || 1;
 
   setOverallProgress(0);
   APP.results = {};
 
+  let worker = null;
   try {
-    // Create worker pool
-    const workerCount = Math.min(parallel, APP.images.length);
-    APP.workerPool = [];
-    for (let i=0; i<workerCount; i++) {
-      const w = await Tesseract.createWorker(lang, oem);
-      await w.setParameters({ tessedit_pageseg_mode: psm });
-      APP.workerPool.push(w);
-    }
+    setCurrentLabel(`言語モデル読み込み中: ${lang}`);
+    toast(`言語モデルを読み込んでいます: ${lang}`, 'inf');
+
+    worker = await Tesseract.createWorker(lang, oem, {
+      logger: m => {
+        if (m.status === 'recognizing text') {
+          setCurrentProgress(m.progress * 100);
+        } else if (m.status && m.progress != null) {
+          setCurrentProgress(m.progress * 50); // loading phase capped at 50%
+        }
+      }
+    });
+    await worker.setParameters({ tessedit_pageseg_mode: psm });
+
+    APP.workerPool = [worker];
 
     const total = APP.images.length;
-    let done = 0;
 
-    // Process in batches
-    for (let i=0; i<total && !APP.shouldStop; i+=workerCount) {
-      const batch = APP.images.slice(i, i+workerCount);
-      await Promise.all(batch.map(async (img, bIdx) => {
-        const worker = APP.workerPool[bIdx % workerCount];
-        const imgResults = [];
-        try {
-          setCurrentLabel(img.name);
-          for (let ri=0; ri<APP.regions.length; ri++) {
-            if (APP.shouldStop) break;
-            const r = APP.regions[ri];
-            setCurrentProgress(ri / APP.regions.length * 80);
-            const pp = preprocessImage(img, r.x, r.y, r.w, r.h);
-            const { data } = await worker.recognize(pp);
-            let text = data.text || '';
-            text = postProcess(text);
-            const conf = Math.round(data.confidence || 0);
-            if (conf < confThresh) text = document.getElementById('s-empty').value;
-            imgResults.push({ regionId: r.id, text, confidence: conf });
-            setCurrentProgress((ri+1)/APP.regions.length*100);
-          }
-          APP.results[img.id] = imgResults;
-        } catch(ex) {
-          if (!skipErr) throw ex;
-          APP.results[img.id] = APP.regions.map(r => ({regionId:r.id, text:'[エラー]', confidence:0}));
-          console.error('OCR error:', img.name, ex);
+    for (let i = 0; i < total && !APP.shouldStop; i++) {
+      const img = APP.images[i];
+      setCurrentLabel(img.name);
+      setCurrentProgress(0);
+      const imgResults = [];
+
+      try {
+        for (let ri = 0; ri < APP.regions.length && !APP.shouldStop; ri++) {
+          const r = APP.regions[ri];
+          const pp = preprocessImage(img, r.x, r.y, r.w, r.h);
+          const { data } = await worker.recognize(pp);
+          let text = postProcess(data.text || '');
+          const conf = Math.round(data.confidence || 0);
+          if (confThresh > 0 && conf < confThresh) text = document.getElementById('s-empty').value;
+          imgResults.push({ regionId: r.id, text, confidence: conf });
+          setCurrentProgress((ri + 1) / APP.regions.length * 100);
         }
-        done++;
-        setOverallProgress(done / total * 100);
-      }));
+        APP.results[img.id] = imgResults;
+      } catch (innerErr) {
+        console.error('OCR error on image:', img.name, innerErr);
+        if (!skipErr) throw innerErr;
+        APP.results[img.id] = APP.regions.map(r => ({ regionId: r.id, text: '[エラー]', confidence: 0 }));
+      }
+
+      setOverallProgress((i + 1) / total * 100);
     }
 
-    // Terminate workers
-    for (const w of APP.workerPool) await w.terminate();
-    APP.workerPool = [];
-
     renderResults();
+    renderImageList();
+    updateResultsToolbar();
+
     if (!APP.shouldStop) {
       toast('OCR処理が完了しました', 'ok');
-      document.getElementById('btn-export').disabled = false;
-      document.getElementById('btn-copy').disabled = false;
-      document.getElementById('btn-preview').disabled = false;
       setOverallProgress(100, true);
     } else {
       toast('OCR処理を停止しました', 'inf');
     }
-    renderImageList();
-  } catch(ex) {
-    toast('OCR処理でエラーが発生しました: ' + ex.message, 'err');
-    console.error(ex);
+  } catch (ex) {
+    console.error('OCR Fatal Error:', ex);
+    const msg = ex?.message || (typeof ex === 'string' ? ex : '') || '詳細はブラウザのコンソール(F12)を確認してください';
+    toast('OCR処理でエラーが発生しました: ' + msg, 'err');
   } finally {
+    if (worker) { try { await worker.terminate(); } catch (e) {} }
+    APP.workerPool = [];
     APP.isRunning = false;
     document.getElementById('btn-run').disabled = false;
     document.getElementById('btn-stop').disabled = true;
   }
 }
 
-async function stopOCR() {
+function stopOCR() {
   APP.shouldStop = true;
-  for (const w of APP.workerPool) { try { await w.terminate(); } catch(e){} }
-  APP.workerPool = [];
-  toast('停止リクエスト送信済み...', 'inf');
+  toast('停止リクエスト送信済み — 現在の処理が終わり次第停止します', 'inf');
 }
 
 function setOverallProgress(pct, done=false) {
