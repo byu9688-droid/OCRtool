@@ -1193,18 +1193,28 @@ async function runOCR() {
 
   // Use local lib/ if downloaded, otherwise CDN
   const useLocal = window._T_LOCAL === true;
+
+  // Check if local WASM core was downloaded (HEAD request avoids loading 6MB)
+  let localCoreExists = false;
+  if (useLocal) {
+    try {
+      const r = await fetch('lib/tesseract-core-lstm.wasm.js', { method: 'HEAD' });
+      localCoreExists = r.ok;
+    } catch(e) { localCoreExists = false; }
+  }
+
   const workerOpts = useLocal ? {
     workerPath: 'lib/worker.min.js',
-    corePath:   'lib/tesseract-core-lstm.wasm.js',
+    ...(localCoreExists ? { corePath: 'lib/tesseract-core-lstm.wasm.js' } : {}),
     langPath:   'langdata',
   } : {
     workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/worker.min.js',
-    corePath:   'https://cdn.jsdelivr.net/npm/tesseract.js-core@4/tesseract-core-lstm.wasm.js',
     langPath:   'https://tessdata.projectnaptha.com/4.0.0',
   };
 
   if (useLocal) {
-    toast('ローカルファイルを使用します（CDN不要）', 'ok');
+    const coreNote = localCoreExists ? '' : '（WASMはCDNから取得）';
+    toast(`ローカルファイルを使用します${coreNote}`, 'ok');
   } else {
     toast(`言語モデルを読み込んでいます: ${lang}（CDN）`, 'inf');
   }
